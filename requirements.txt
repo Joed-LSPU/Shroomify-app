@@ -7,3 +7,4 @@ scikit-image
 scikit-learn
 tqdm
 matplotlib
+gunicorn
