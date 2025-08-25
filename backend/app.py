@@ -16,6 +16,7 @@ from torchvision.models import resnet18, ResNet18_Weights
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+import base64
 
 app = Flask(__name__)
 CORS(app)
@@ -194,17 +195,17 @@ def classify(img_path):
     
     ann_model = ANN()
     ann_model.load_state_dict(torch.load(MODEL_PATH))
-    model.eval()
+    ann_model.eval()
 
     input_tensor = torch.tensor(features_scaled, dtype=torch.float32)
 
     with torch.no_grad():
         logits = ann_model(input_tensor)
-        predicted_class = torch.argmax(logits, dim=1).item()
-    
-    image_name.append(img_path)
-    classification.append(predicted_class)
-    return predicted_class
+        probs = F.softmax(logits, dim=1)
+        predicted_class = torch.argmax(probs, dim=1).item()
+        confidence = torch.max(probs).item()
+
+    return predicted_class, confidence
 
 @app.route('/api/upload', methods=['POST'])  # ✅ Allow POST
 def upload_image():
@@ -218,9 +219,20 @@ def upload_image():
     image_path = os.path.join('uploads', image.filename)
     image.save(image_path)
 
-    _class = classify(image_path)
+    img = Image.open(image_path)
+    img = img.resize((224, 224))
 
-    return jsonify({'result': _class})
+    img.save(image_path)
+
+    _class, _confidence = classify(image_path)
+
+    with open(image_path, "rb") as f:
+        img_bytes = f.read()
+        img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+
+    return jsonify({'result': _class,
+                    'confidence': _confidence,
+                    'image': img_base64})
 
 if __name__ == '__main__':
     app.run(debug=True)

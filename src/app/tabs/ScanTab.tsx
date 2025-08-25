@@ -1,10 +1,11 @@
 'use client';
 import { Camera, Video, Zap, Upload, CheckCircle, AlertTriangle, XCircle, X } from 'lucide-react';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import Webcam from 'react-webcam';
+import ErrorModal from "@/app/tabs/ErrorModal";
 
 // ResultPopup Component (inline)
-const ResultPopup = ({ result, isOpen, onClose }: { result: number | null, isOpen: boolean, onClose: () => void }) => {
+const ResultPopup = ({ result, previewImage, confidence, isOpen, onClose }: { result: number | null, previewImage: string | null, confidence: number | null, isOpen: boolean, onClose: () => void }) => {
   if (!isOpen) return null;
 
   // Condition statements for different results
@@ -92,9 +93,25 @@ const ResultPopup = ({ result, isOpen, onClose }: { result: number | null, isOpe
             <div className={`w-10 h-10 rounded-full ${resultData.bgColor} ${resultData.borderColor} border flex items-center justify-center`}>
               <IconComponent className={`w-6 h-6 ${resultData.iconColor}`} />
             </div>
-            <div>
+            <div className="flex-1">
               <h3 className="text-xl font-bold text-white">{resultData.status}</h3>
-              <p className="text-sm text-gray-400">{resultData.message}</p>
+              {confidence !== null && (
+                <div className="mt-1 flex items-center space-x-2">
+                  <span className="text-xs text-gray-500">Confidence:</span>
+                  <div className="flex items-center space-x-1">
+                    <div className={`w-2 h-2 rounded-full ${
+                      confidence >= 0.8 ? 'bg-green-400' :
+                      confidence >= 0.6 ? 'bg-yellow-400' : 'bg-red-400'
+                    }`}></div>
+                    <span className={`text-xs font-medium ${
+                      confidence >= 0.8 ? 'text-green-400' :
+                      confidence >= 0.6 ? 'text-yellow-400' : 'text-red-400'
+                    }`}>
+                      {Math.round(confidence * 100)}%
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <button
@@ -107,6 +124,20 @@ const ResultPopup = ({ result, isOpen, onClose }: { result: number | null, isOpe
 
         {/* Content */}
         <div className="p-6 space-y-6">
+          {/* Preview Image */}
+          {previewImage && (
+            <div>
+              <div className="relative bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                <img
+                  src={`data:image/jpeg;base64,${previewImage}`}
+                  alt="Scanned fruiting bag"
+                  className="w-full h-48 object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none"></div>
+              </div>
+            </div>
+          )}
+
           {/* Description */}
           <div className={`${resultData.bgColor} ${resultData.borderColor} border rounded-lg p-4`}>
             <p className="text-gray-300 text-sm leading-relaxed">
@@ -174,20 +205,16 @@ const ScanTab = () => {
   // New state for result popup
   const [showResult, setShowResult] = useState(false);
   const [scanResult, setScanResult] = useState<number | null>(null);
-
-  useEffect(() => {
-    fetch('http://127.0.0.1:5000/api/hello')
-      .then((res) => res.json())
-      .then((data) => setMsg(data.message))
-      .catch(() => setMsg('Error fetching from Flask'));
-  }, []);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [confidence, setConfidence] = useState<number | null>(null);
+  const [showError, setShowError] = useState(false);
 
   const handleSnap = async () => {
   if (webcamRef.current) {
     const imageSrc = webcamRef.current.getScreenshot();
 
     if (!imageSrc) {
-      console.error("No image captured from webcam.");
+      setShowError(true); 
       return;
     }
 
@@ -204,7 +231,7 @@ const ScanTab = () => {
       formData.append('image', blob, 'snapshot.jpg');
 
       // Send to backend
-      const response = await fetch('https://db09f236e2d3.ngrok-free.app/api/upload', {
+      const response = await fetch('https://reliably-one-kiwi.ngrok-free.app/api/upload', {
         method: 'POST',
         body: formData,
       });
@@ -214,16 +241,18 @@ const ScanTab = () => {
 
       // Store and show result
       setScanResult(result.prediction ?? result.result);
+      setPreviewImage(result.image);
+      setConfidence(result.confidence);
       setShowResult(true);
 
     } catch (error) {
       console.error('Scan failed:', error);
+      setShowError(true); 
     } finally {
       setIsScanning(false);
     }
   }
 };
-
 
   const handleUpload = () => {
     const fileInput = document.createElement('input');
@@ -239,7 +268,7 @@ const ScanTab = () => {
         formData.append('image', file);
 
         try {
-          const response = await fetch('https://db09f236e2d3.ngrok-free.app/api/upload', {
+          const response = await fetch('https://reliably-one-kiwi.ngrok-free.app/api/upload', {
             method: 'POST',
             body: formData,
           });
@@ -248,10 +277,13 @@ const ScanTab = () => {
           console.log(result);
           
           setScanResult(result.prediction || result.result);
+          setPreviewImage(result.image);
+          setConfidence(result.confidence);
           setShowResult(true);
           
         } catch (err) {
           console.error('Upload failed:', err);
+          setShowError(true);
         } finally {
           setIsScanning(false);
         }
@@ -438,8 +470,19 @@ const ScanTab = () => {
       {/* Result Popup */}
       <ResultPopup 
         result={scanResult} 
+        previewImage={previewImage}
+        confidence={confidence}
         isOpen={showResult} 
         onClose={() => setShowResult(false)} 
+      />
+
+       {/* Error Modal */}
+      <ErrorModal
+        isOpen={showError}
+        onClose={() => setShowError(false)}
+        onRetry={() => window.location.reload()}
+        title="Unexpected Error!"
+        message="Oh no! Cannot connect to the backend server. Please try again or contact the developers."
       />
     </div>
   );

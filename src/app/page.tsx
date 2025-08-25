@@ -6,7 +6,7 @@ import Header from './tabs/Header';
 import HomeTab from './tabs/HomeTab';
 import ScanTab from './tabs/ScanTab';
 // import HistoryTab from './components/tabs/HistoryTab';
-// import ProfileTab from './components/tabs/ProfileTab';
+import ProfileTab from './tabs/ProfileTab';
 
 
 
@@ -22,8 +22,8 @@ const ShroomifyApp = () => {
         return <ScanTab />;
       // case 'history':
       //   return <HistoryTab />;
-      // case 'profile':
-      //   return <ProfileTab />;
+      case 'profile':
+        return <ProfileTab />;
       // default:
       //   return <HomeTab />;
     }
