@@ -17,6 +17,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import base64
+import sqlite3
+from google.oauth2 import id_token
+from google.auth.transport import requests as grequests
 
 app = Flask(__name__)
 CORS(app)
@@ -31,6 +34,52 @@ classification = []
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCALER_PATH = os.path.join(BASE_DIR, 'minmax_scaler.pkl')
 MODEL_PATH = os.path.join(BASE_DIR, 'ann_model_state_dict.pth')
+DB_PATH = os.path.join(BASE_DIR, 'app.db')
+
+# --- Simple SQLite user storage ---
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db_connection()
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS User (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            password TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_user_by_email(email: str):
+    conn = get_db_connection()
+    cur = conn.execute("SELECT id, full_name, email, password FROM User WHERE email = ?", (email,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
+def create_user(full_name: str, email: str, password):
+    conn = get_db_connection()
+    conn.execute(
+        "INSERT INTO User (full_name, email, password) VALUES (?, ?, ?)",
+        (full_name, email, password),
+    )
+    conn.commit()
+    conn.close()
+
+
+# Ensure DB is initialized on startup
+init_db()
 
 import os
 import numpy as np
@@ -233,6 +282,48 @@ def upload_image():
     return jsonify({'result': _class,
                     'confidence': _confidence,
                     'image': img_base64})
+
+# --- Google Auth endpoint ---
+@app.route('/api/auth/google', methods=['POST'])
+def google_auth():
+    body = request.get_json(silent=True) or {}
+    token = body.get('id_token') or body.get('credential')
+    if not token:
+        return jsonify({'error': 'Missing id_token'}), 400
+
+    try:
+        req = grequests.Request()
+        client_id = os.environ.get('GOOGLE_CLIENT_ID')
+        if client_id:
+            payload = id_token.verify_oauth2_token(token, req, client_id)
+        else:
+            payload = id_token.verify_oauth2_token(token, req)
+
+        email = payload.get('email')
+        full_name = (
+            payload.get('name')
+            or (f"{payload.get('given_name', '').strip()} {payload.get('family_name', '').strip()}".strip())
+            or (email.split('@')[0] if email else None)
+        )
+
+        if not email:
+            return jsonify({'error': 'Google token missing email'}), 400
+
+        existing = get_user_by_email(email)
+        created = False
+        if existing is None:
+            create_user(full_name or email, email, None)
+            created = True
+            existing = get_user_by_email(email)
+
+        user_payload = {
+            'full_name': existing['full_name'],
+            'email': existing['email'],
+            'password': existing['password']  # may be null if created via Google
+        }
+        return jsonify({'user': user_payload, 'created': created})
+    except Exception as e:
+        return jsonify({'error': 'Invalid Google token'}), 401
 
 if __name__ == '__main__':
     app.run(debug=True)
