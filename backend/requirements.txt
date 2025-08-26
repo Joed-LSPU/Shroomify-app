@@ -1,9 +1,11 @@
-flask
+Flask
 flask-cors
-torch
+google-auth
 numpy
-Pillow
+pandas
+torch
+torchvision
 scikit-image
-scikit-learn
-tqdm
+Pillow
+joblib
 matplotlib

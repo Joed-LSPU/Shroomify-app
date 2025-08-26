@@ -72,6 +72,8 @@ const ProfileTab: React.FC<ProfileTabProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [localUserData, setLocalUserData] = useState<UserData>(userData);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(false);
 
   // Handle profile updates
   const handleProfileUpdate = (field: keyof UserData, value: string): void => {
@@ -130,6 +132,37 @@ const ProfileTab: React.FC<ProfileTabProps> = ({
       }
     };
     return colorMap[color];
+  };
+
+  // Minimal Google login handler: expects caller to provide an id_token (e.g., from Google Identity Services)
+  const handleGoogleLogin = async (idToken: string) => {
+    try {
+      setIsAuthLoading(true);
+      setFormError(null);
+      const response = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_token: idToken })
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'Google login failed. Please try again.');
+      }
+      const user = result.user;
+      setLocalUserData({
+        name: user.full_name,
+        email: user.email,
+        phone: localUserData.phone,
+        joinDate: localUserData.joinDate,
+        experienceLevel: localUserData.experienceLevel,
+        favoriteMethod: localUserData.favoriteMethod,
+        avatar: localUserData.avatar
+      });
+    } catch (error: any) {
+      setFormError(error?.message || 'Google login failed. Please try again.');
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   return (
@@ -203,6 +236,9 @@ const ProfileTab: React.FC<ProfileTabProps> = ({
               <Phone className="w-4 h-4 mr-3 text-gray-400" />
               <span>{localUserData.phone}</span>
             </div>
+            {formError && (
+              <div className="text-red-400 text-sm">{formError}</div>
+            )}
           </div>
         </div>
       </div>
@@ -258,11 +294,22 @@ const ProfileTab: React.FC<ProfileTabProps> = ({
         </p>
       </div>
 
-      {/* Settings Button */}
-      <div className="text-center">
+      {/* Settings + Google Login */}
+      <div className="text-center space-y-3">
         <button className="bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center space-x-2 mx-auto">
           <Settings className="w-5 h-5" />
           <span>Account Settings</span>
+        </button>
+        <button
+          onClick={() => {
+            // TODO: Replace with Google Identity Services flow to obtain a real id_token
+            const demoIdToken = prompt('Enter Google ID token');
+            if (demoIdToken) handleGoogleLogin(demoIdToken);
+          }}
+          disabled={isAuthLoading}
+          className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:opacity-60 text-white font-semibold py-2 px-6 rounded-lg shadow flex items-center space-x-2 mx-auto"
+        >
+          <span>{isAuthLoading ? 'Signing in…' : 'Sign in with Google'}</span>
         </button>
       </div>
     </div>
